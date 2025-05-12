@@ -22,10 +22,19 @@ class Todo {
                 list_id VARCHAR(36) NOT NULL,
                 user_id VARCHAR(36) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                priority VARCHAR(10) NULL,
+                due_date TIMESTAMP NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )";
             
             $this->conn->exec($sql);
+            
+            // Check if priority column exists, add if not
+            $this->ensureColumnExists('priority', 'VARCHAR(10) NULL');
+            
+            // Check if due_date column exists, add if not
+            $this->ensureColumnExists('due_date', 'TIMESTAMP NULL');
+            
         } catch (PDOException $e) {
             // If there's an error with the foreign key, try creating the table without it
             error_log("Error creating todos table with foreign key: " . $e->getMessage());
@@ -36,10 +45,30 @@ class Todo {
                 completed BOOLEAN DEFAULT FALSE,
                 list_id VARCHAR(36) NOT NULL,
                 user_id VARCHAR(36) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                priority VARCHAR(10) NULL,
+                due_date TIMESTAMP NULL
             )";
             
             $this->conn->exec($sql);
+        }
+    }
+    
+    // Helper method to add columns if they don't exist
+    private function ensureColumnExists($columnName, $columnDefinition) {
+        try {
+            // Check if column exists
+            $checkSql = "SHOW COLUMNS FROM todos LIKE '$columnName'";
+            $stmt = $this->conn->query($checkSql);
+            
+            if ($stmt->rowCount() === 0) {
+                // Column does not exist, add it
+                $alterSql = "ALTER TABLE todos ADD COLUMN $columnName $columnDefinition";
+                $this->conn->exec($alterSql);
+                error_log("Added column $columnName to todos table");
+            }
+        } catch (PDOException $e) {
+            error_log("Error checking/adding column $columnName: " . $e->getMessage());
         }
     }
     

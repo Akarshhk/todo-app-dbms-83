@@ -1,4 +1,3 @@
-
 <?php
 require_once __DIR__ . '/../middlewares/AuthMiddleware.php';
 require_once __DIR__ . '/../models/todo.php';
@@ -91,6 +90,16 @@ class TodoController {
         // Get request data
         $data = json_decode(file_get_contents('php://input'), true);
         
+        // Handle due_date formatting for database
+        if (isset($data['due_date'])) {
+            if (empty($data['due_date']) || $data['due_date'] === 0) {
+                $data['due_date'] = null; // Clear due date
+            } else {
+                // Convert timestamp to MySQL datetime format
+                $data['due_date'] = date('Y-m-d H:i:s', intval($data['due_date'] / 1000));
+            }
+        }
+        
         // Update todo
         $success = $this->todo_model->update($id, $data);
         
@@ -102,6 +111,11 @@ class TodoController {
         
         // Get updated todo
         $todo = $this->todo_model->findById($id);
+        
+        // Convert due_date from database format back to timestamp
+        if (isset($todo['due_date']) && $todo['due_date']) {
+            $todo['due_date'] = strtotime($todo['due_date']) * 1000; // Convert to JS timestamp (milliseconds)
+        }
         
         echo json_encode($todo);
     }

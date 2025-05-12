@@ -1,4 +1,3 @@
-
 import { useEffect, useReducer, ReactNode } from "react";
 import TodoContext from "./TodoContext";
 import { todoReducer, suggestPriority, getTaskStatistics } from "./todoReducer";

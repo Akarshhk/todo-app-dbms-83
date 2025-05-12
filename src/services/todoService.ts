@@ -1,4 +1,3 @@
-
 import { apiClient } from "./api";
 import { API_ENDPOINTS } from "../config/api";
 import { Todo } from "@/contexts/todo";
@@ -11,7 +10,7 @@ export interface TodoDTO {
   list_id: string;
   created_at: string;
   priority?: 'low' | 'medium' | 'high';
-  due_date?: string; // ISO date string for due date
+  due_date?: string | number | null; // ISO date string or timestamp for due date
 }
 
 // Convert from backend to frontend format
@@ -25,7 +24,7 @@ const mapToTodo = (dto: TodoDTO): Todo => ({
   listId: dto.list_id,
   createdAt: new Date(dto.created_at).getTime(),
   priority: dto.priority,
-  dueDate: dto.due_date ? new Date(dto.due_date).getTime() : undefined,
+  dueDate: dto.due_date ? Number(dto.due_date) : undefined,
 });
 
 // Convert from frontend to backend format
@@ -35,7 +34,7 @@ const mapToDTO = (todo: Partial<Todo>): Partial<TodoDTO> => ({
   ...(todo.completed !== undefined && { completed: todo.completed }),
   ...(todo.listId && { list_id: todo.listId }),
   ...(todo.priority && { priority: todo.priority }),
-  ...(todo.dueDate && { due_date: new Date(todo.dueDate).toISOString() }),
+  ...(todo.dueDate !== undefined && { due_date: todo.dueDate || null }),
 });
 
 export const todoService = {

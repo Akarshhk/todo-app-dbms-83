@@ -1,6 +1,5 @@
-
 import { nanoid } from 'nanoid';
-import { TodoState, TodoAction, defaultLists } from './types';
+import { TodoState, TodoAction, defaultLists, Todo } from './types';
 
 // Priority keywords to detect importance
 const HIGH_PRIORITY_KEYWORDS = [

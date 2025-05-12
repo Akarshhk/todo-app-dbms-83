@@ -10,6 +10,8 @@ export interface TodoDTO {
   completed: boolean | number | string;
   list_id: string;
   created_at: string;
+  priority?: 'low' | 'medium' | 'high';
+  due_date?: string; // ISO date string for due date
 }
 
 // Convert from backend to frontend format
@@ -22,6 +24,8 @@ const mapToTodo = (dto: TodoDTO): Todo => ({
              dto.completed === 'true',
   listId: dto.list_id,
   createdAt: new Date(dto.created_at).getTime(),
+  priority: dto.priority,
+  dueDate: dto.due_date ? new Date(dto.due_date).getTime() : undefined,
 });
 
 // Convert from frontend to backend format
@@ -30,6 +34,8 @@ const mapToDTO = (todo: Partial<Todo>): Partial<TodoDTO> => ({
   ...(todo.text && { text: todo.text }),
   ...(todo.completed !== undefined && { completed: todo.completed }),
   ...(todo.listId && { list_id: todo.listId }),
+  ...(todo.priority && { priority: todo.priority }),
+  ...(todo.dueDate && { due_date: new Date(todo.dueDate).toISOString() }),
 });
 
 export const todoService = {
@@ -68,7 +74,7 @@ export const todoService = {
   },
   
   // Create a new todo
-  async createTodo(todo: { text: string; listId: string }): Promise<Todo> {
+  async createTodo(todo: { text: string; listId: string; priority?: 'low' | 'medium' | 'high' }): Promise<Todo> {
     const response = await apiClient.post<TodoDTO>(API_ENDPOINTS.todos, mapToDTO(todo));
     return mapToTodo(response);
   },

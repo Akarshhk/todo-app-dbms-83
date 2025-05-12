@@ -8,6 +8,8 @@ export interface Todo {
   completed: boolean;
   listId: string;
   createdAt: number;
+  priority?: 'low' | 'medium' | 'high'; // Add priority field
+  dueDate?: number; // Add due date for prioritization
 }
 
 export interface TodoList {
@@ -33,7 +35,9 @@ export type TodoActionPayload =
   | boolean 
   | { id: string; text: string } 
   | { text: string; listId: string }
-  | { id: string; name: string; color: string };
+  | { id: string; name: string; color: string }
+  | { id: string; priority: 'low' | 'medium' | 'high' }
+  | { id: string; dueDate: number };
 
 export type TodoAction =
   | { type: 'ADD_TODO'; payload: Todo | { text: string; listId: string } }
@@ -42,6 +46,8 @@ export type TodoAction =
   | { type: 'UPDATE_TODO'; payload: Todo }
   | { type: 'DELETE_TODO'; payload: string }
   | { type: 'EDIT_TODO'; payload: { id: string; text: string } }
+  | { type: 'SET_PRIORITY'; payload: { id: string; priority: 'low' | 'medium' | 'high' } }
+  | { type: 'SET_DUE_DATE'; payload: { id: string; dueDate: number } }
   | { type: 'ADD_LIST'; payload: TodoList | { name: string; color: string } }
   | { type: 'SET_LISTS'; payload: TodoList[] }
   | { type: 'UPDATE_LIST'; payload: TodoList }
@@ -61,6 +67,25 @@ export interface TodoContextType {
   addList: (name: string, color: string) => Promise<void>;
   editList: (id: string, name: string, color: string) => Promise<void>;
   deleteList: (id: string) => Promise<void>;
+  setPriority: (id: string, priority: 'low' | 'medium' | 'high') => Promise<void>;
+  setDueDate: (id: string, dueDate: number) => Promise<void>;
+  getTaskStatistics: () => TaskStatistics;
+  suggestPriority: (text: string) => 'low' | 'medium' | 'high';
+}
+
+// New type for task statistics
+export interface TaskStatistics {
+  totalTasks: number;
+  completedTasks: number;
+  completionRate: number;
+  tasksByPriority: {
+    high: number;
+    medium: number;
+    low: number;
+  };
+  tasksByList: Record<string, number>;
+  completedToday: number;
+  completedThisWeek: number;
 }
 
 // Default lists

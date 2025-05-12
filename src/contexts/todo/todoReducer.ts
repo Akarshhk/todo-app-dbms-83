@@ -2,6 +2,30 @@
 import { nanoid } from 'nanoid';
 import { TodoState, TodoAction, defaultLists } from './types';
 
+// Priority keywords to detect importance
+const HIGH_PRIORITY_KEYWORDS = [
+  'urgent', 'important', 'critical', 'asap', 'emergency', 'deadline'
+];
+
+const MEDIUM_PRIORITY_KEYWORDS = [
+  'soon', 'needed', 'required', 'upcoming'
+];
+
+// Helper function to suggest priority based on text content
+export function suggestPriority(text: string): 'low' | 'medium' | 'high' {
+  const lowercaseText = text.toLowerCase();
+  
+  if (HIGH_PRIORITY_KEYWORDS.some(keyword => lowercaseText.includes(keyword))) {
+    return 'high';
+  }
+  
+  if (MEDIUM_PRIORITY_KEYWORDS.some(keyword => lowercaseText.includes(keyword))) {
+    return 'medium';
+  }
+  
+  return 'low';
+}
+
 // Reducer function
 export function todoReducer(state: TodoState, action: TodoAction): TodoState {
   switch (action.type) {
@@ -41,12 +65,17 @@ export function todoReducer(state: TodoState, action: TodoAction): TodoState {
         };
       } else {
         // If payload is { text, listId }
+        // Auto-suggest priority based on text content
+        const text = (payload as { text: string; listId: string }).text;
+        const suggestedPriority = suggestPriority(text);
+        
         const newTodo = {
           id: nanoid(),
-          text: (payload as { text: string; listId: string }).text,
+          text: text,
           completed: false,
           listId: (payload as { text: string; listId: string }).listId,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          priority: suggestedPriority
         };
         return {
           ...state,
@@ -86,6 +115,26 @@ export function todoReducer(state: TodoState, action: TodoAction): TodoState {
         ...state,
         todos: state.todos.filter(todo => todo.id !== action.payload)
       };
+      
+    case 'SET_PRIORITY': {
+      const { id, priority } = action.payload as { id: string; priority: 'low' | 'medium' | 'high' };
+      return {
+        ...state,
+        todos: state.todos.map(todo =>
+          todo.id === id ? { ...todo, priority } : todo
+        )
+      };
+    }
+    
+    case 'SET_DUE_DATE': {
+      const { id, dueDate } = action.payload as { id: string; dueDate: number };
+      return {
+        ...state,
+        todos: state.todos.map(todo =>
+          todo.id === id ? { ...todo, dueDate } : todo
+        )
+      };
+    }
       
     case 'ADD_LIST': {
       const payload = action.payload;
@@ -148,4 +197,55 @@ export function todoReducer(state: TodoState, action: TodoAction): TodoState {
     default:
       return state;
   }
+}
+
+// Function to calculate task statistics
+export function getTaskStatistics(todos: Todo[]) {
+  const totalTasks = todos.length;
+  const completedTasks = todos.filter(todo => todo.completed).length;
+  
+  // Calculate tasks by priority
+  const tasksByPriority = {
+    high: todos.filter(todo => todo.priority === 'high').length,
+    medium: todos.filter(todo => todo.priority === 'medium').length,
+    low: todos.filter(todo => todo.priority === 'low' || !todo.priority).length
+  };
+  
+  // Calculate tasks by list
+  const tasksByList: Record<string, number> = {};
+  todos.forEach(todo => {
+    if (!tasksByList[todo.listId]) {
+      tasksByList[todo.listId] = 0;
+    }
+    tasksByList[todo.listId]++;
+  });
+  
+  // Calculate today's completions
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const startOfDayTimestamp = startOfDay.getTime();
+  
+  const completedToday = todos.filter(
+    todo => todo.completed && todo.createdAt >= startOfDayTimestamp
+  ).length;
+  
+  // Calculate this week's completions
+  const startOfWeek = new Date();
+  startOfWeek.setHours(0, 0, 0, 0);
+  startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+  const startOfWeekTimestamp = startOfWeek.getTime();
+  
+  const completedThisWeek = todos.filter(
+    todo => todo.completed && todo.createdAt >= startOfWeekTimestamp
+  ).length;
+  
+  return {
+    totalTasks,
+    completedTasks,
+    completionRate: totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0,
+    tasksByPriority,
+    tasksByList,
+    completedToday,
+    completedThisWeek
+  };
 }

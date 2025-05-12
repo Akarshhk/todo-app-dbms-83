@@ -12,6 +12,7 @@ export const API_ENDPOINTS = {
   },
   todos: '/todos',
   lists: '/lists',
+  statistics: '/statistics', // Endpoint for fetching user statistics (if implemented on backend)
 };
 
 console.log('API configuration loaded:', { 

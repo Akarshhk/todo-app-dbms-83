@@ -1,323 +1,333 @@
 
-import React, { useReducer, useEffect } from 'react';
-import { nanoid } from 'nanoid';
-import { todoService } from '../../services/todoService';
-import { listService } from '../../services/listService';
-import { useAuth } from '../AuthContext';
-import { useToast } from '@/hooks/use-toast';
-import TodoContext from './TodoContext';
-import { todoReducer } from './todoReducer';
-import { initialState, TodoList, Todo } from './types';
+import { useEffect, useReducer, ReactNode } from "react";
+import { TodoContext } from "./TodoContext";
+import { todoReducer, suggestPriority, getTaskStatistics } from "./todoReducer";
+import { initialState, TaskStatistics } from "./types";
+import { todoService } from "@/services/todoService";
+import { listService } from "@/services/listService";
+import { useToast } from "@/hooks/use-toast";
 
-// Provider component
-export function TodoProvider({ children }: { children: React.ReactNode }) {
+interface TodoProviderProps {
+  children: ReactNode;
+}
+
+export function TodoProvider({ children }: TodoProviderProps) {
   const [state, dispatch] = useReducer(todoReducer, initialState);
-  const { isAuthenticated, user } = useAuth();
   const { toast } = useToast();
   
-  // Load data from API when authenticated
+  // Fetch todos and lists when component mounts
   useEffect(() => {
-    if (!isAuthenticated || !user) {
-      console.log("Not authenticated or no user, skipping data load");
-      return;
-    }
-    
-    const loadData = async () => {
+    const fetchData = async () => {
       dispatch({ type: 'SET_LOADING', payload: true });
-      dispatch({ type: 'SET_ERROR', payload: null });
       
       try {
-        console.log('Loading data for user:', user.id);
-        
-        // Load lists
+        // Fetch lists first
         const lists = await listService.getAllLists();
-        console.log('Loaded lists:', lists);
+        dispatch({ type: 'SET_LISTS', payload: lists });
         
-        if (lists && Array.isArray(lists)) {
-          dispatch({ type: 'SET_LISTS', payload: lists });
-        } else {
-          console.error('Lists data is not an array:', lists);
-          dispatch({ type: 'SET_LISTS', payload: initialState.lists });
-          
-          // Show toast with error
-          toast({
-            title: 'Warning',
-            description: 'Could not load your lists. Using defaults.',
-            variant: 'destructive',
-          });
-        }
-        
-        // Load todos
+        // Then fetch todos
         const todos = await todoService.getAllTodos();
-        console.log('Loaded todos:', todos);
-        
-        if (todos && Array.isArray(todos)) {
-          dispatch({ type: 'SET_TODOS', payload: todos });
-        } else {
-          console.error('Todos data is not an array:', todos);
-          dispatch({ type: 'SET_TODOS', payload: [] });
-        }
+        dispatch({ type: 'SET_TODOS', payload: todos });
         
       } catch (error) {
-        console.error('Failed to load data:', error);
-        // Set default lists when there's an error
-        dispatch({ type: 'SET_LISTS', payload: initialState.lists });
+        console.error('Error fetching data:', error);
         dispatch({ 
           type: 'SET_ERROR', 
-          payload: error instanceof Error ? error.message : 'Unknown error loading data'
+          payload: error instanceof Error ? error.message : 'Failed to load data' 
         });
         
         toast({
-          title: 'Error',
-          description: 'Failed to load your data. Please refresh and try again.',
-          variant: 'destructive',
+          title: "Error loading data",
+          description: error instanceof Error ? error.message : "Failed to load data",
+          variant: "destructive",
         });
       } finally {
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     };
     
-    loadData();
-  }, [isAuthenticated, user, toast]);
+    fetchData();
+  }, [toast]);
   
-  // Add todo
+  // Function to add a new todo
   const addTodo = async (text: string, listId: string) => {
     try {
-      dispatch({ type: 'SET_LOADING', payload: true });
+      const suggestedPriority = suggestPriority(text);
       
-      // Optimistic update with temporary ID
-      const tempId = nanoid();
-      const tempTodo: Todo = {
-        id: tempId,
-        text,
-        completed: false,
-        listId: listId || state.activeListId || 'inbox',
-        createdAt: Date.now()
-      };
-      
-      dispatch({ type: 'ADD_TODO', payload: tempTodo });
-      
-      // API call
-      const savedTodo = await todoService.createTodo({
-        text,
-        listId: listId || state.activeListId || 'inbox'
+      // First, add to local state for immediate feedback
+      dispatch({ 
+        type: 'ADD_TODO', 
+        payload: { 
+          text, 
+          listId,
+          priority: suggestedPriority
+        }
       });
       
-      // Replace temp todo with the one from API
-      dispatch({ type: 'DELETE_TODO', payload: tempId });
-      dispatch({ type: 'ADD_TODO', payload: savedTodo });
+      // Then, save to API
+      const newTodo = await todoService.createTodo({ text, listId });
       
-      toast({
-        title: 'Success',
-        description: 'Task added successfully.',
-      });
-      
+      // Update with the actual todo from API
+      dispatch({ type: 'UPDATE_TODO', payload: newTodo });
     } catch (error) {
-      console.error('Failed to add todo:', error);
+      console.error('Error adding todo:', error);
+      
       toast({
-        title: 'Error',
-        description: 'Failed to add task. Please try again.',
-        variant: 'destructive',
+        title: "Error adding task",
+        description: error instanceof Error ? error.message : "Failed to add task",
+        variant: "destructive",
       });
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
     }
   };
   
-  // Toggle todo
+  // Function to toggle a todo's completion status
   const toggleTodo = async (id: string) => {
     try {
-      // Optimistic update
+      // First, update local state for immediate feedback
       dispatch({ type: 'TOGGLE_TODO', payload: id });
       
-      // API call
+      // Then, update in API
       const updatedTodo = await todoService.toggleTodo(id);
+      
+      // Make sure the UI reflects the actual state from API
       dispatch({ type: 'UPDATE_TODO', payload: updatedTodo });
     } catch (error) {
-      console.error('Failed to toggle todo:', error);
+      console.error('Error toggling todo:', error);
+      
       toast({
-        title: 'Error',
-        description: 'Failed to update task. Please try again.',
-        variant: 'destructive',
+        title: "Error updating task",
+        description: error instanceof Error ? error.message : "Failed to update task",
+        variant: "destructive",
       });
-      // Revert on failure
+      
+      // Revert the local change if API call fails
       dispatch({ type: 'TOGGLE_TODO', payload: id });
     }
   };
   
-  // Edit todo
+  // Function to edit a todo's text
   const editTodo = async (id: string, text: string) => {
-    const todo = state.todos.find(t => t.id === id);
-    if (!todo) return;
-    
-    const originalText = todo.text;
-    
     try {
-      // Optimistic update
-      dispatch({ 
-        type: 'UPDATE_TODO', 
-        payload: { ...todo, text } 
+      // First, update local state for immediate feedback
+      dispatch({ type: 'EDIT_TODO', payload: { id, text } });
+      
+      // Suggest priority based on new text
+      const suggestedPriority = suggestPriority(text);
+      
+      // Then, update in API
+      const updatedTodo = await todoService.updateTodo(id, { 
+        text,
+        priority: suggestedPriority
       });
       
-      // API call
-      const updatedTodo = await todoService.updateTodo(id, { text });
+      // Make sure the UI reflects the actual state from API
       dispatch({ type: 'UPDATE_TODO', payload: updatedTodo });
+    } catch (error) {
+      console.error('Error editing todo:', error);
       
       toast({
-        title: 'Success',
-        description: 'Task updated successfully.',
-      });
-    } catch (error) {
-      console.error('Failed to edit todo:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to update task. Please try again.',
-        variant: 'destructive',
-      });
-      // Revert on failure
-      dispatch({ 
-        type: 'UPDATE_TODO', 
-        payload: { ...todo, text: originalText } 
+        title: "Error updating task",
+        description: error instanceof Error ? error.message : "Failed to update task",
+        variant: "destructive",
       });
     }
   };
   
-  // Delete todo
+  // Function to delete a todo
   const deleteTodo = async (id: string) => {
-    const todo = state.todos.find(t => t.id === id);
-    if (!todo) return;
-    
     try {
-      // Optimistic update
+      // First, update local state for immediate feedback
       dispatch({ type: 'DELETE_TODO', payload: id });
       
-      // API call
+      // Then, delete in API
       await todoService.deleteTodo(id);
+    } catch (error) {
+      console.error('Error deleting todo:', error);
       
       toast({
-        title: 'Success',
-        description: 'Task deleted successfully.',
+        title: "Error deleting task",
+        description: error instanceof Error ? error.message : "Failed to delete task",
+        variant: "destructive",
       });
-    } catch (error) {
-      console.error('Failed to delete todo:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to delete task. Please try again.',
-        variant: 'destructive',
-      });
-      // Revert on failure
-      if (todo) {
-        dispatch({ type: 'ADD_TODO', payload: todo });
+      
+      // We'd need to refetch todos if delete fails to restore accurate state
+      try {
+        const todos = await todoService.getAllTodos();
+        dispatch({ type: 'SET_TODOS', payload: todos });
+      } catch (fetchError) {
+        console.error('Error refetching todos:', fetchError);
       }
     }
   };
   
-  // Add list
+  // Function to add a new list
   const addList = async (name: string, color: string) => {
     try {
-      dispatch({ type: 'SET_LOADING', payload: true });
-      
-      // API call
+      // Then, save to API
       const newList = await listService.createList({ name, color });
       
-      // Update state with response from API
+      // Update state with the list from API
       dispatch({ type: 'ADD_LIST', payload: newList });
+      
       toast({
-        title: 'Success',
-        description: 'New list created successfully.',
+        title: "List created",
+        description: `"${name}" list has been created`,
       });
     } catch (error) {
-      console.error('Failed to add list:', error);
+      console.error('Error adding list:', error);
+      
       toast({
-        title: 'Error',
-        description: 'Failed to create list. Please try again.',
-        variant: 'destructive',
+        title: "Error creating list",
+        description: error instanceof Error ? error.message : "Failed to create list",
+        variant: "destructive",
       });
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
     }
   };
   
-  // Edit list
+  // Function to edit a list
   const editList = async (id: string, name: string, color: string) => {
-    // Don't allow editing inbox
-    if (id === 'inbox') return;
-    
-    const list = state.lists.find(l => l.id === id);
-    if (!list) return;
-    
     try {
-      // Optimistic update
-      dispatch({ 
-        type: 'UPDATE_LIST', 
-        payload: { ...list, name, color } 
-      });
+      // First, update local state for immediate feedback
+      dispatch({ type: 'EDIT_LIST', payload: { id, name, color } });
       
-      // API call
+      // Then, update in API
       const updatedList = await listService.updateList(id, { name, color });
+      
+      // Make sure the UI reflects the actual state from API
       dispatch({ type: 'UPDATE_LIST', payload: updatedList });
       
       toast({
-        title: 'Success',
-        description: 'List updated successfully.',
+        title: "List updated",
+        description: `"${name}" list has been updated`,
       });
     } catch (error) {
-      console.error('Failed to edit list:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to update list. Please try again.',
-        variant: 'destructive',
-      });
-      // Revert on failure
-      dispatch({ type: 'UPDATE_LIST', payload: list });
-    }
-  };
-  
-  // Delete list
-  const deleteList = async (id: string) => {
-    // Don't allow deleting inbox
-    if (id === 'inbox') return;
-    
-    const list = state.lists.find(l => l.id === id);
-    if (!list) return;
-    
-    try {
-      // Optimistic update
-      dispatch({ type: 'DELETE_LIST', payload: id });
-      
-      // API call
-      await listService.deleteList(id);
+      console.error('Error editing list:', error);
       
       toast({
-        title: 'Success',
-        description: 'List deleted successfully.',
+        title: "Error updating list",
+        description: error instanceof Error ? error.message : "Failed to update list",
+        variant: "destructive",
       });
-    } catch (error) {
-      console.error('Failed to delete list:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to delete list. Please try again.',
-        variant: 'destructive',
-      });
-      // Revert on failure
-      if (list) {
-        dispatch({ type: 'ADD_LIST', payload: list });
+      
+      // We'd need to refetch lists if update fails to restore accurate state
+      try {
+        const lists = await listService.getAllLists();
+        dispatch({ type: 'SET_LISTS', payload: lists });
+      } catch (fetchError) {
+        console.error('Error refetching lists:', fetchError);
       }
     }
   };
   
+  // Function to delete a list
+  const deleteList = async (id: string) => {
+    // Don't allow deleting the inbox
+    if (id === 'inbox') {
+      toast({
+        title: "Cannot delete Inbox",
+        description: "The Inbox list cannot be deleted",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    try {
+      // First, update local state for immediate feedback
+      dispatch({ type: 'DELETE_LIST', payload: id });
+      
+      // Then, delete in API
+      await listService.deleteList(id);
+      
+      toast({
+        title: "List deleted",
+        description: "List has been deleted",
+      });
+    } catch (error) {
+      console.error('Error deleting list:', error);
+      
+      toast({
+        title: "Error deleting list",
+        description: error instanceof Error ? error.message : "Failed to delete list",
+        variant: "destructive",
+      });
+      
+      // We'd need to refetch lists if delete fails to restore accurate state
+      try {
+        const lists = await listService.getAllLists();
+        dispatch({ type: 'SET_LISTS', payload: lists });
+      } catch (fetchError) {
+        console.error('Error refetching lists:', fetchError);
+      }
+    }
+  };
+  
+  // Function to set priority for a task
+  const setPriority = async (id: string, priority: 'low' | 'medium' | 'high') => {
+    try {
+      // First, update local state for immediate feedback
+      dispatch({ type: 'SET_PRIORITY', payload: { id, priority } });
+      
+      // Then, update in API
+      const updatedTodo = await todoService.updateTodo(id, { priority });
+      
+      // Make sure the UI reflects the actual state from API
+      dispatch({ type: 'UPDATE_TODO', payload: updatedTodo });
+    } catch (error) {
+      console.error('Error setting priority:', error);
+      
+      toast({
+        title: "Error updating priority",
+        description: error instanceof Error ? error.message : "Failed to update priority",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  // Function to set due date for a task
+  const setDueDate = async (id: string, dueDate: number) => {
+    try {
+      // First, update local state for immediate feedback
+      dispatch({ type: 'SET_DUE_DATE', payload: { id, dueDate } });
+      
+      // Then, update in API
+      const updatedTodo = await todoService.updateTodo(id, { dueDate });
+      
+      // Make sure the UI reflects the actual state from API
+      dispatch({ type: 'UPDATE_TODO', payload: updatedTodo });
+    } catch (error) {
+      console.error('Error setting due date:', error);
+      
+      toast({
+        title: "Error updating due date",
+        description: error instanceof Error ? error.message : "Failed to update due date",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  // Function to calculate task statistics
+  const calculateTaskStatistics = (): TaskStatistics => {
+    return getTaskStatistics(state.todos);
+  };
+  
   return (
-    <TodoContext.Provider value={{ 
-      state, 
-      dispatch,
-      addTodo,
-      toggleTodo,
-      editTodo,
-      deleteTodo,
-      addList,
-      editList,
-      deleteList
-    }}>
+    <TodoContext.Provider 
+      value={{
+        state,
+        dispatch,
+        addTodo,
+        toggleTodo,
+        editTodo,
+        deleteTodo,
+        addList,
+        editList,
+        deleteList,
+        setPriority,
+        setDueDate,
+        getTaskStatistics: calculateTaskStatistics,
+        suggestPriority
+      }}
+    >
       {children}
     </TodoContext.Provider>
   );
